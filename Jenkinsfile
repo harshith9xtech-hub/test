@@ -12,7 +12,7 @@ pipeline {
             steps {
                 git branch: "${env.BRANCH_NAME}",
                     url: 'https://github.com/harshith9xtech-hub/test.git',
-                    credentialsId: 'git-creds'
+                    credentialsId: 'git'
             }
         }
 
