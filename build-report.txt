@@ -1,0 +1,17 @@
+=====================================
+
+📦 System Versions:
+git version 2.43.0
+Docker version 29.3.0, build 5927d80
+Python 3.12.3
+
+📂 Files in Workspace:
+total 16
+-rw-r--r-- 1 root root 160 Mar 26 15:03 Dockerfile
+-rw-r--r-- 1 root root 304 Mar 26 15:03 app.py
+-rw-r--r-- 1 root root 157 Mar 26 17:28 build-report.txt
+-rw-r--r-- 1 root root  13 Mar 26 15:03 requirements.txt
+
+=====================================
+Build Completed Successfully ✅
+=====================================
