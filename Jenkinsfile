@@ -10,7 +10,9 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git url: 'https://github.com/harshith9xtech-hub/test.git', branch: "${env.BRANCH_NAME}"
+                git branch: "${env.BRANCH_NAME}",
+                    url: 'https://github.com/harshith9xtech-hub/test.git',
+                    credentialsId: 'git-creds'
             }
         }
 
