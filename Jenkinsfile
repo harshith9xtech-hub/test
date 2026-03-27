@@ -89,9 +89,14 @@ pipeline {
         stage('Deploy Container') {
             steps {
                 sh """
-                    docker stop python-app || true
-                    docker rm python-app || true
+                    echo "Stopping old container..."
+                    docker rm -f python-app || true
+
+                    echo "Starting new container..."
                     docker run -d -p 5000:5000 --name python-app $DOCKER_IMAGE:$TAG
+
+                    echo "Verifying container is running..."
+                    docker ps
                 """
             }
         }
@@ -108,7 +113,8 @@ pipeline {
         }
 
         always {
-            sh 'docker system prune -f'
+            echo "🧹 Cleaning unused images only..."
+            sh 'docker image prune -f'
         }
     }
 }
