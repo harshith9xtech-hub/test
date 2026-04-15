@@ -93,7 +93,7 @@ pipeline {
                     docker rm -f python-app || true
 
                     echo "Starting new container..."
-                    docker run -d -p 5000:5000 --name python-app $DOCKER_IMAGE:$TAG
+                    docker run -d -p 5000:5001 --name python-app $DOCKER_IMAGE:$TAG
 
                     echo "Verifying container is running..."
                     docker ps
