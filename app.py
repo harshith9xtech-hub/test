@@ -4,9 +4,10 @@ app = Flask(__name__)
 @app.get("/")
 def hello():
     return jsonify(
-        message="✨gg Welcome to Cloud with Harshith Lets GO build the pipeline ✨",
-        tip="Built with Flask, shipped by Jenkins, running in Docker.",
-        UI="this is my new ui"
+        message="🚀 FEATURE BRANCH UI UPDATE BY HARSHITH",
+        status="Feature branch is running",
+        new_ui="✨ DARK MODE ENABLED (SIMULATED)",
+        version="feature/ui-v1"
     )
 
 if __name__ == "__main__":
