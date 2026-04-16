@@ -1,120 +1,137 @@
+@Library('my-first-shared-library@master') _
+
 pipeline {
     agent any
 
     environment {
+        REPO = "test-python"
         DOCKER_IMAGE = "harshith0703/test-python"
-        TAG = "${env.BUILD_NUMBER}"
+        TAG = "${GIT_COMMIT}"
+        PREVIEW_PORT = "5001"
+        PROD_PORT = "5000"
+        PREVIEW_URL = "http://localhost:5001"
+        PROD_URL = "http://localhost:5000"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: "${env.BRANCH_NAME}",
+                git credentialsId: 'git',
                     url: 'https://github.com/harshith9xtech-hub/test.git',
-                    credentialsId: 'git'
+                    branch: 'feature/ui'
             }
         }
 
-        stage('Generate Report') {
+        stage('SonarQube Scan') {
             steps {
-                sh """
-                    echo "=====================================" > build-report.txt
-                    echo " 🚀 BUILD REPORT " >> build-report.txt
-                    echo "=====================================" >> build-report.txt
-                    echo "Build Number : ${env.BUILD_NUMBER}" >> build-report.txt
-                    echo "Job Name     : ${env.JOB_NAME}" >> build-report.txt
-                    echo "Branch       : ${env.BRANCH_NAME}" >> build-report.txt
-                    echo "Workspace    : ${env.WORKSPACE}" >> build-report.txt
-                    echo "Build URL    : ${env.BUILD_URL}" >> build-report.txt
-                    echo "Docker Image : ${DOCKER_IMAGE}" >> build-report.txt
-                    echo "Image Tag    : ${TAG}" >> build-report.txt
-                    echo "Build Time   : \$(date)" >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "🔀 Git Information:" >> build-report.txt
-                    echo "Branch       : \$(git rev-parse --abbrev-ref HEAD)" >> build-report.txt
-                    echo "Commit ID    : \$(git rev-parse HEAD)" >> build-report.txt
-                    echo "Short Commit : \$(git rev-parse --short HEAD)" >> build-report.txt
-                    echo "Last Commit  : \$(git log -1 --pretty=format:'%an - %s (%ci)')" >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "📦 System Versions:" >> build-report.txt
-                    git --version >> build-report.txt
-                    docker --version >> build-report.txt
-                    python3 --version >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "📂 Files in Workspace:" >> build-report.txt
-                    ls -l >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "=====================================" >> build-report.txt
-                    echo "Build Completed Successfully ✅" >> build-report.txt
-                    echo "=====================================" >> build-report.txt
-
-                    cat build-report.txt
-                """
+                sonar()
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE:$TAG .'
+                buildImage()
             }
         }
 
-        stage('Docker Login') {
+        stage('Trivy Scan') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-hub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                }
+                trivyScan()
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Deploy Preview (Localhost)') {
             steps {
                 sh """
-                    docker push $DOCKER_IMAGE:$TAG
-                    docker tag $DOCKER_IMAGE:$TAG $DOCKER_IMAGE:latest
-                    docker push $DOCKER_IMAGE:latest
+                    docker rm -f preview-app || true
+
+                    docker run -d -p ${PREVIEW_PORT}:5000 \
+                        --name preview-app \
+                        ${DOCKER_IMAGE}:${TAG}
+
+                    echo "Preview URL: ${PREVIEW_URL}"
                 """
             }
         }
 
-        stage('Deploy Container') {
+        stage('Send Approval Email') {
+    steps {
+        emailext(
+            to: "harshith.9xtech@gmail.com",
+            subject: "🚀 Approval Required - ${env.JOB_NAME}",
+            body: """
+            Feature is ready for production.
+
+            Preview URL:
+            http://localhost:5001
+
+            Go to Jenkins and approve:
+            ${env.BUILD_URL}
+
+            Build: ${env.BUILD_NUMBER}
+ """
+        )
+    }
+}
+
+stage('Approval Gate') {
+    steps {
+        input message: "Approve deployment to production?"
+    }
+}
+        stage('Push Image') {
             steps {
                 sh """
-                    echo "Stopping old container..."
-                    docker rm -f python-app || true
+                    dockerLogin()
 
-                    echo "Starting new container..."
-                    docker run -d -p 5000:5000 --name python-app $DOCKER_IMAGE:$TAG
+                    echo "Pushing image..."
+                    docker push ${DOCKER_IMAGE}:${TAG}
+                """
+            }
+        }
 
-                    echo "Verifying container is running..."
-                    docker ps
+        stage('Deploy Production (Localhost)') {
+            steps {
+                sh """
+                    docker pull ${DOCKER_IMAGE}:${TAG}
+
+                    docker rm -f prod-app || true
+
+                    docker run -d -p 6000:6000 \
+                        --name prod-app \
+                        ${DOCKER_IMAGE}:${TAG}
+
+                    echo "Production URL: ${PROD_URL}"
                 """
             }
         }
     }
 
     post {
+        always {
+            emailext(
+                subject: "📦 Build Completed - ${env.JOB_NAME}",
+                body: """
+                Build Status: ${currentBuild.currentResult}
+
+                Preview: ${PREVIEW_URL}
+                Production: ${PROD_URL}
+
+                Jenkins: ${env.BUILD_URL}
+                """,
+                to: "harshith.9xtech@gmail.com"
+            )
+
+            sh "docker image prune -f"
+        }
+
         success {
-            echo "✅ Build SUCCESS: Image pushed & app deployed!"
-            archiveArtifacts artifacts: 'build-report.txt'
+            echo "SUCCESS 🚀"
         }
 
         failure {
-            echo "❌ Build FAILED: Something went wrong!"
-        }
-
-        always {
-            echo "🧹 Cleaning unused images only..."
-            sh 'docker image prune -f'
+            echo "FAILED ❌"
         }
     }
 }
