@@ -1,120 +1,38 @@
+@Library('my-first-shared-library@master') _
 pipeline {
     agent any
-
-    environment {
-        DOCKER_IMAGE = "harshith0703/test-python"
+     environment {
+        REPO = "test-python"
         TAG = "${env.BUILD_NUMBER}"
+        PORT = "5001"
+        DOCKER_IMAGE = "harshith0703/test-python"
     }
-
-    stages {
-
-        stage('Checkout Code') {
-            steps {
-                git branch: "${env.BRANCH_NAME}",
-                    url: 'https://github.com/harshith9xtech-hub/test.git',
-                    credentialsId: 'git'
+    stages{
+        stage('Share-library-message'){
+         steps{
+             simpleEcho()
+         }
+        }
+        stage('git-checkout'){
+            steps{
+                git credentialsId: 'git',
+                url: 'https://github.com/harshith9xtech-hub/test.git'
             }
         }
-
-        stage('Generate Report') {
-            steps {
-                sh """
-                    echo "=====================================" > build-report.txt
-                    echo " 🚀 BUILD REPORT " >> build-report.txt
-                    echo "=====================================" >> build-report.txt
-                    echo "Build Number : ${env.BUILD_NUMBER}" >> build-report.txt
-                    echo "Job Name     : ${env.JOB_NAME}" >> build-report.txt
-                    echo "Branch       : ${env.BRANCH_NAME}" >> build-report.txt
-                    echo "Workspace    : ${env.WORKSPACE}" >> build-report.txt
-                    echo "Build URL    : ${env.BUILD_URL}" >> build-report.txt
-                    echo "Docker Image : ${DOCKER_IMAGE}" >> build-report.txt
-                    echo "Image Tag    : ${TAG}" >> build-report.txt
-                    echo "Build Time   : \$(date)" >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "🔀 Git Information:" >> build-report.txt
-                    echo "Branch       : \$(git rev-parse --abbrev-ref HEAD)" >> build-report.txt
-                    echo "Commit ID    : \$(git rev-parse HEAD)" >> build-report.txt
-                    echo "Short Commit : \$(git rev-parse --short HEAD)" >> build-report.txt
-                    echo "Last Commit  : \$(git log -1 --pretty=format:'%an - %s (%ci)')" >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "📦 System Versions:" >> build-report.txt
-                    git --version >> build-report.txt
-                    docker --version >> build-report.txt
-                    python3 --version >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "📂 Files in Workspace:" >> build-report.txt
-                    ls -l >> build-report.txt
-
-                    echo "" >> build-report.txt
-                    echo "=====================================" >> build-report.txt
-                    echo "Build Completed Successfully ✅" >> build-report.txt
-                    echo "=====================================" >> build-report.txt
-
-                    cat build-report.txt
-                """
+        stage('docker-login'){
+            steps{
+                dockerLogin(credentialsId: 'docker-hub-creds')
             }
         }
-
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t $DOCKER_IMAGE:$TAG .'
+        stage('docker'){
+            steps{
+                buildImage()
             }
         }
-
-        stage('Docker Login') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-hub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-                }
+        stage('deploy'){
+            steps{
+                deployApp()
             }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                sh """
-                    docker push $DOCKER_IMAGE:$TAG
-                    docker tag $DOCKER_IMAGE:$TAG $DOCKER_IMAGE:latest
-                    docker push $DOCKER_IMAGE:latest
-                """
-            }
-        }
-
-        stage('Deploy Container') {
-            steps {
-                sh """
-                    echo "Stopping old container..."
-                    docker rm -f python-app || true
-
-                    echo "Starting new container..."
-                    docker run -d -p 5001:5001 --name python-app $DOCKER_IMAGE:$TAG
-
-                    echo "Verifying container is running..."
-                    docker ps
-                """
-            }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Build SUCCESS: Image pushed & app deployed!"
-            archiveArtifacts artifacts: 'build-report.txt'
-        }
-
-        failure {
-            echo "❌ Build FAILED: Something went wrong!"
-        }
-
-        always {
-            echo "🧹 Cleaning unused images only..."
-            sh 'docker image prune -f'
         }
     }
 }
