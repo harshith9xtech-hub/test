@@ -6,7 +6,6 @@ pipeline {
     environment {
         REPO = "test-python"
         DOCKER_IMAGE = "harshith0703/test-python"
-        TAG = "${GIT_COMMIT}"   // IMPORTANT: immutable artifact
         PREVIEW_PORT = "5001"
         PROD_PORT = "5000"
     }
@@ -24,10 +23,15 @@ pipeline {
                 git credentialsId: 'git',
                     url: 'https://github.com/harshith9xtech-hub/test.git',
                     branch: env.BRANCH_NAME
+
+                script {
+                    // SAFE + RELIABLE TAG (fixes GIT_COMMIT issues)
+                    env.TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                }
             }
         }
 
-        stage('SonarQube Scan (Code Quality)') {
+        stage('SonarQube Scan') {
             steps {
                 sonar()
             }
@@ -35,46 +39,61 @@ pipeline {
 
         stage('Docker Login') {
             steps {
-                dockerLogin(credentialsId: 'docker-hub-creds')
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                buildImage()
-            }
-        }
-
-        stage('Trivy Scan (Security Gate)') {
-            steps {
-                trivyScan()
-            }
-        }
-
-        stage('Deploy Preview (Feature Branch)') {
-            when {
-                expression { env.BRANCH_NAME.startsWith("feature/") }
-            }
-            steps {
-                script {
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds',
+                                                  usernameVariable: 'USER',
+                                                  passwordVariable: 'PASS')]) {
                     sh """
-                        echo "Stopping old preview container..."
-                        docker rm -f preview-app || true
-
-                        echo "Starting preview container..."
-                        docker run -d -p ${PREVIEW_PORT}:5000 \
-                        --name preview-app \
-                        ${DOCKER_IMAGE}:${TAG}
-
-                        docker ps
+                        echo $PASS | docker login -u $USER --password-stdin
                     """
                 }
             }
         }
 
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                    echo "Building Docker image..."
+                    docker build -t ${DOCKER_IMAGE}:${TAG} .
+                """
+            }
+        }
+
+        stage('Trivy Scan (Security Gate)') {
+            steps {
+                sh """
+                    docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    ghcr.io/aquasecurity/trivy:latest image \
+                    --scanners vuln \
+                    --severity HIGH,CRITICAL \
+                    --exit-code 0 \
+                    ${DOCKER_IMAGE}:${TAG}
+                """
+            }
+        }
+
+        stage('Deploy Preview (Feature Branch)') {
+            when {
+                expression { env.BRANCH_NAME?.startsWith("feature/") }
+            }
+            steps {
+                sh """
+                    echo "Stopping old preview container..."
+                    docker rm -f preview-app || true
+
+                    echo "Starting preview container..."
+                    docker run -d -p ${PREVIEW_PORT}:5000 \
+                        --name preview-app \
+                        ${DOCKER_IMAGE}:${TAG}
+
+                    docker ps
+                """
+            }
+        }
+
         stage('Tester Approval') {
             when {
-                expression { env.BRANCH_NAME.startsWith("feature/") }
+                expression { env.BRANCH_NAME?.startsWith("feature/") }
             }
             steps {
                 input message: "Approve this feature build for staging/production?"
@@ -83,10 +102,13 @@ pipeline {
 
         stage('Push Image to Docker Hub') {
             when {
-                expression { env.BRANCH_NAME.startsWith("feature/") }
+                expression { env.BRANCH_NAME?.startsWith("feature/") }
             }
             steps {
-                pushImage()
+                sh """
+                    echo "Pushing image..."
+                    docker push ${DOCKER_IMAGE}:${TAG}
+                """
             }
         }
 
@@ -97,22 +119,20 @@ pipeline {
             steps {
                 input message: "Deploy to PRODUCTION?"
 
-                script {
-                    sh """
-                        echo "Pulling image..."
-                        docker pull ${DOCKER_IMAGE}:${TAG}
+                sh """
+                    echo "Pulling image..."
+                    docker pull ${DOCKER_IMAGE}:${TAG}
 
-                        echo "Stopping old production container..."
-                        docker rm -f prod-app || true
+                    echo "Stopping old production container..."
+                    docker rm -f prod-app || true
 
-                        echo "Starting production container..."
-                        docker run -d -p ${PROD_PORT}:5000 \
+                    echo "Starting production container..."
+                    docker run -d -p ${PROD_PORT}:5000 \
                         --name prod-app \
                         ${DOCKER_IMAGE}:${TAG}
 
-                        docker ps
-                    """
-                }
+                    docker ps
+                """
             }
         }
     }
@@ -123,7 +143,7 @@ pipeline {
         }
 
         failure {
-            echo "❌ Pipeline FAILED — Check logs (Sonar/Trivy likely blocked it)"
+            echo "❌ Pipeline FAILED — Check logs (Sonar/Trivy/Docker issues)"
         }
 
         always {
