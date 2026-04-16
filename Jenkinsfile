@@ -6,9 +6,11 @@ pipeline {
     environment {
         REPO = "test-python"
         DOCKER_IMAGE = "harshith0703/test-python"
-        TAG = "${env.GIT_COMMIT}"
+        TAG = "${GIT_COMMIT}"
         PREVIEW_PORT = "5001"
         PROD_PORT = "5000"
+        PREVIEW_URL = "http://localhost:5001"
+        PROD_URL = "http://localhost:5000"
     }
 
     stages {
@@ -42,34 +44,29 @@ pipeline {
         stage('Deploy Preview (Localhost)') {
             steps {
                 sh """
-                    echo "Stopping old preview container..."
                     docker rm -f preview-app || true
 
-                    echo "Starting preview container..."
                     docker run -d -p ${PREVIEW_PORT}:5000 \
                         --name preview-app \
                         ${DOCKER_IMAGE}:${TAG}
 
-                    echo "Preview URL:"
-                    echo "http://localhost:${PREVIEW_PORT}"
+                    echo "Preview URL: ${PREVIEW_URL}"
                 """
             }
         }
 
         stage('Send Approval Email') {
             steps {
-                emailext (
-                    subject: "🚀 Approval Required - ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                emailext(
+                    subject: "🚀 Feature Build Ready - ${env.JOB_NAME}",
                     body: """
-                        Build is ready for production approval.
+                    Build is ready for approval.
 
-                        🔹 Preview URL:
-                        http://localhost:${PREVIEW_PORT}
+                    Preview URL:
+                    ${PREVIEW_URL}
 
-                        🔹 Jenkins Approval Link:
-                        ${env.BUILD_URL}
-
-                        Please open Jenkins and approve deployment.
+                    Approve in Jenkins:
+                    ${env.BUILD_URL}
                     """,
                     to: "harshith.9xtech@gmail.com"
                 )
@@ -78,15 +75,14 @@ pipeline {
 
         stage('Tester Approval') {
             steps {
-                input message: "Approve deployment to PRODUCTION?"
+                input message: "Approve deployment to production?"
             }
         }
 
-        stage('Push Image to Docker Hub') {
+        stage('Push Image') {
             steps {
                 sh """
-                    echo "Logging into Docker Hub..."
-
+                    echo "Logging in..."
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
                     echo "Pushing image..."
@@ -98,19 +94,15 @@ pipeline {
         stage('Deploy Production (Localhost)') {
             steps {
                 sh """
-                    echo "Pulling latest image..."
                     docker pull ${DOCKER_IMAGE}:${TAG}
 
-                    echo "Stopping old production container..."
                     docker rm -f prod-app || true
 
-                    echo "Starting production container..."
                     docker run -d -p ${PROD_PORT}:5000 \
                         --name prod-app \
                         ${DOCKER_IMAGE}:${TAG}
 
-                    echo "Production URL:"
-                    echo "http://localhost:${PROD_PORT}"
+                    echo "Production URL: ${PROD_URL}"
                 """
             }
         }
@@ -118,16 +110,28 @@ pipeline {
 
     post {
         always {
-            echo "🧹 Cleaning Docker images..."
+            emailext(
+                subject: "📦 Build Completed - ${env.JOB_NAME}",
+                body: """
+                Build Status: ${currentBuild.currentResult}
+
+                Preview: ${PREVIEW_URL}
+                Production: ${PROD_URL}
+
+                Jenkins: ${env.BUILD_URL}
+                """,
+                to: "harshith.9xtech@gmail.com"
+            )
+
             sh "docker image prune -f"
         }
 
         success {
-            echo "✅ SUCCESS - Deployment completed"
+            echo "SUCCESS 🚀"
         }
 
         failure {
-            echo "❌ FAILED - Check logs"
+            echo "FAILED ❌"
         }
     }
 }
