@@ -80,12 +80,6 @@ stage('Approval Gate') {
         input message: "Approve deployment to production?"
     }
 }
-        stage('Tester Approval') {
-            steps {
-                input message: "Approve deployment to production?"
-            }
-        }
-
         stage('Push Image') {
             steps {
                 sh """
