@@ -29,7 +29,7 @@ pipeline {
 
         stage('SonarQube Scan (Code Quality)') {
             steps {
-                sonarScan()
+                sonar()
             }
         }
 
