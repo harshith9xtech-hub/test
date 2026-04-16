@@ -55,23 +55,15 @@ pipeline {
             }
         }
 
-        stage('Send Approval Email') {
-            steps {
-                emailext(
-                    subject: "🚀 Feature Build Ready - ${env.JOB_NAME}",
-                    body: """
-                    Build is ready for approval.
-
-                    Preview URL:
-                    ${PREVIEW_URL}
-
-                    Approve in Jenkins:
-                    ${env.BUILD_URL}
-                    """,
-                    to: "harshith.9xtech@gmail.com"
-                )
-            }
-        }
+        stage('Pipeline Email Test') {
+      steps {
+        emailext(
+            to: "harshith.9xtech@gmail.com",
+            subject: "Jenkins Pipeline Email Test",
+            body: "If you receive this, emailext is fixed."
+        )
+    }
+}
 
         stage('Tester Approval') {
             steps {
