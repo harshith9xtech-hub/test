@@ -1,16 +1,21 @@
 @Library('my-first-shared-library@master') _
 
+import java.util.UUID
+
 pipeline {
     agent any
 
     environment {
-        REPO = "test-python"
         DOCKER_IMAGE = "harshith0703/test-python"
         TAG = "${GIT_COMMIT}"
+
         PREVIEW_PORT = "5001"
         PROD_PORT = "5000"
+
         PREVIEW_URL = "http://localhost:5001"
         PROD_URL = "http://localhost:5000"
+
+        APPROVAL_TOKEN = "${UUID.randomUUID().toString()}"
     }
 
     stages {
@@ -23,13 +28,7 @@ pipeline {
             }
         }
 
-        stage('SonarQube Scan') {
-            steps {
-                sonar()
-            }
-        }
-
-        stage('Build Docker Image') {
+        stage('Build Image') {
             steps {
                 buildImage()
             }
@@ -41,31 +40,48 @@ pipeline {
             }
         }
 
-        stage('Deploy Preview (Localhost)') {
+        stage('Deploy Preview') {
             steps {
                 sh """
                     docker rm -f preview-app || true
-
                     docker run -d -p ${PREVIEW_PORT}:5000 \
                         --name preview-app \
                         ${DOCKER_IMAGE}:${TAG}
-
-                    echo "Preview URL: ${PREVIEW_URL}"
                 """
             }
         }
 
-        stage('Pipeline Email Test') {
-      steps {
-        emailext(
-            to: "harshith.9xtech@gmail.com",
-            subject: "Jenkins Pipeline Email Test",
-            body: "If you receive this, emailext is fixed."
-        )
-    }
-}
+        stage('Send Approval Email') {
+            steps {
+                script {
 
-        stage('Tester Approval') {
+                    def approveUrl = "${env.BUILD_URL}input/Approve?token=${env.APPROVAL_TOKEN}"
+                    def rejectUrl  = "${env.BUILD_URL}input/Reject?token=${env.APPROVAL_TOKEN}"
+
+                    emailext(
+                        to: "harshith.9xtech@gmail.com",
+                        subject: "🚀 Deployment Approval Required - ${env.JOB_NAME}",
+                        body: """
+                        Feature build is ready.
+
+                        Preview URL:
+                        ${PREVIEW_URL}
+
+                        Approve Deployment:
+                        ${approveUrl}
+
+                        Reject Deployment:
+                        ${rejectUrl}
+
+                        Jenkins:
+                        ${env.BUILD_URL}
+                        """
+                    )
+                }
+            }
+        }
+
+        stage('Wait for Approval') {
             steps {
                 input message: "Approve deployment to production?"
             }
@@ -74,16 +90,13 @@ pipeline {
         stage('Push Image') {
             steps {
                 sh """
-                    echo "Logging in..."
                     echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-
-                    echo "Pushing image..."
                     docker push ${DOCKER_IMAGE}:${TAG}
                 """
             }
         }
 
-        stage('Deploy Production (Localhost)') {
+        stage('Deploy Production') {
             steps {
                 sh """
                     docker pull ${DOCKER_IMAGE}:${TAG}
@@ -93,8 +106,6 @@ pipeline {
                     docker run -d -p ${PROD_PORT}:5000 \
                         --name prod-app \
                         ${DOCKER_IMAGE}:${TAG}
-
-                    echo "Production URL: ${PROD_URL}"
                 """
             }
         }
@@ -103,27 +114,19 @@ pipeline {
     post {
         always {
             emailext(
-                subject: "📦 Build Completed - ${env.JOB_NAME}",
+                to: "harshith.9xtech@gmail.com",
+                subject: "Build Completed - ${currentBuild.currentResult}",
                 body: """
-                Build Status: ${currentBuild.currentResult}
+                Status: ${currentBuild.currentResult}
 
                 Preview: ${PREVIEW_URL}
                 Production: ${PROD_URL}
 
                 Jenkins: ${env.BUILD_URL}
-                """,
-                to: "harshith.9xtech@gmail.com"
+                """
             )
 
             sh "docker image prune -f"
-        }
-
-        success {
-            echo "SUCCESS 🚀"
-        }
-
-        failure {
-            echo "FAILED ❌"
         }
     }
 }
