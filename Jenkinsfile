@@ -104,7 +104,7 @@ stage('Approval Gate') {
 
                     docker rm -f prod-app || true
 
-                    docker run -d -p ${PROD_PORT}:5000 \
+                    docker run -d -p ${PROD_PORT}:6000 \
                         --name prod-app \
                         ${DOCKER_IMAGE}:${TAG}
 
