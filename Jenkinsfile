@@ -13,12 +13,6 @@ pipeline {
 
     stages {
 
-        stage('Shared Library Check') {
-            steps {
-                simpleEcho()
-            }
-        }
-
         stage('Checkout Code') {
             steps {
                 git credentialsId: 'git',
@@ -30,12 +24,6 @@ pipeline {
         stage('SonarQube Scan') {
             steps {
                 sonar()
-            }
-        }
-
-        stage('Docker Login') {
-            steps {
-                dockerLogin(credentialsId: 'docker-hub-creds')
             }
         }
 
@@ -51,51 +39,74 @@ pipeline {
             }
         }
 
-        stage('Deploy Preview') {
-            when {
-                expression { env.BRANCH_NAME?.startsWith("feature/") }
-            }
+        stage('Deploy Preview (Localhost)') {
             steps {
                 sh """
+                    echo "Stopping old preview..."
                     docker rm -f preview-app || true
+
+                    echo "Starting preview on localhost..."
                     docker run -d -p ${PREVIEW_PORT}:5000 \
-                    --name preview-app \
-                    ${DOCKER_IMAGE}:${TAG}
+                        --name preview-app \
+                        ${DOCKER_IMAGE}:${TAG}
+
+                    echo "Preview URL:"
+                    echo "http://localhost:${PREVIEW_PORT}"
                 """
             }
         }
 
-        stage('Tester Approval') {
-            when {
-                expression { env.BRANCH_NAME?.startsWith("feature/") }
-            }
+        stage('Tester Approval (Manual)') {
             steps {
-                input message: "Approve this feature build for staging/production?"
+                input message: "Approve deployment to production?"
             }
         }
 
-        stage('Push Image') {
-            when {
-                expression { env.BRANCH_NAME?.startsWith("feature/") }
-            }
+        stage('Send Approval Email (optional)') {
             steps {
-                pushImage()
+                emailext (
+                    subject: "🚀 Deployment Ready - ${env.JOB_NAME}",
+                    body: """
+                        Build Ready for Production
+
+                        Preview URL:
+                        http://localhost:${PREVIEW_PORT}
+
+                        Click Jenkins for approval:
+                        ${env.BUILD_URL}
+                    """,
+                    to: "harshith.9xtech@gmail.com"
+                )
             }
         }
 
-        stage('Deploy Production') {
-            when {
-                branch 'master'
-            }
+        stage('Push Image to Registry') {
             steps {
-                input message: "Deploy to PRODUCTION?"
+                sh """
+                    echo "Logging into Docker Hub..."
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+
+                    echo "Pushing image..."
+                    docker push ${DOCKER_IMAGE}:${TAG}
+                """
+            }
+        }
+
+        stage('Deploy Production (Localhost)') {
+            steps {
+                input message: "Deploy to PRODUCTION on localhost?"
 
                 sh """
                     docker pull ${DOCKER_IMAGE}:${TAG}
+
                     docker rm -f prod-app || true
+
                     docker run -d -p ${PROD_PORT}:5000 \
-                    --name prod-app \
-                    ${DOCKER_IMAGE}:${TAG}
+                        --name prod-app \
+                        ${DOCKER_IMAGE}:${TAG}
+
+                    echo "Production URL:"
+                    echo "http://localhost:${PROD_PORT}"
                 """
             }
         }
@@ -103,7 +114,7 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up..."
+            echo "Cleaning Docker..."
             sh "docker image prune -f"
         }
 
@@ -112,7 +123,7 @@ pipeline {
         }
 
         failure {
-            echo "FAILED ❌ (check logs)"
+            echo "FAILED ❌"
         }
     }
 }
