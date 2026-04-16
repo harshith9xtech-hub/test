@@ -23,7 +23,7 @@ pipeline {
             steps {
                 git credentialsId: 'git',
                     url: 'https://github.com/harshith9xtech-hub/test.git',
-                    branch: 'main'
+                    branch: 'feature/ui'
             }
         }
 
